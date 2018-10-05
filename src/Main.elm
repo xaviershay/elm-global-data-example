@@ -96,7 +96,7 @@ view model =
             viewPage [ text "You shouldn't be here" ]
 
         PostsModel subModel ->
-            viewPage [ text "Posts", viewLink "/comments" ]
+            viewPage [ Page.Posts.view subModel, p [] [ viewLink "/comments" ] ]
 
         CommentsModel ->
             viewPage [ text "Comments", viewLink "/posts" ]

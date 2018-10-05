@@ -5,6 +5,7 @@ import Browser.Navigation as Nav
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http
+import Page.Comments
 import Page.Posts
 import Route
 import Url
@@ -19,7 +20,7 @@ type alias Model =
 
 type PageModel
     = PostsModel Page.Posts.Model
-    | CommentsModel
+    | CommentsModel Page.Comments.Model
     | Empty -- This is pretty gross. Should be home or something.
 
 
@@ -27,6 +28,7 @@ type Msg
     = LinkClicked Browser.UrlRequest
     | ChangedUrl Url.Url
     | GotPostsMsg Page.Posts.Msg
+    | GotCommentsMsg Page.Comments.Msg
 
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
@@ -57,6 +59,10 @@ update msg model =
             Page.Posts.update subMsg subModel
                 |> updateWith PostsModel GotPostsMsg model
 
+        ( GotCommentsMsg subMsg, CommentsModel subModel ) ->
+            Page.Comments.update subMsg subModel
+                |> updateWith CommentsModel GotCommentsMsg model
+
         ( _, _ ) ->
             ( model, Cmd.none )
 
@@ -65,7 +71,7 @@ changeRouteTo : Route.Route -> Model -> ( Model, Cmd Msg )
 changeRouteTo route model =
     case route of
         Route.Comments ->
-            ( { model | pageModel = CommentsModel }, Cmd.none )
+            Page.Comments.init |> updateWith CommentsModel GotCommentsMsg model
 
         Route.Posts ->
             Page.Posts.init |> updateWith PostsModel GotPostsMsg model
@@ -98,8 +104,8 @@ view model =
         PostsModel subModel ->
             viewPage [ Page.Posts.view subModel, p [] [ viewLink "/comments" ] ]
 
-        CommentsModel ->
-            viewPage [ text "Comments", viewLink "/posts" ]
+        CommentsModel subModel ->
+            viewPage [ Page.Comments.view subModel, p [] [ viewLink "/posts" ] ]
 
 
 subscriptions : Model -> Sub Msg

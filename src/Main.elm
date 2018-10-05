@@ -5,57 +5,77 @@ import Browser.Navigation as Nav
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http
+import Page.Posts
+import Route
 import Url
-import Url.Parser exposing ((</>), Parser, int, map, oneOf, s, string)
-
-
-type Route
-    = Posts
-    | Comments
 
 
 type alias Model =
     { key : Nav.Key
-    , route : Route
+    , route : Route.Route
+    , pageModel : PageModel
     }
+
+
+type PageModel
+    = PostsModel Page.Posts.Model
+    | CommentsModel
+    | Empty -- This is pretty gross. Should be home or something.
 
 
 type Msg
     = LinkClicked Browser.UrlRequest
-    | UrlChanged Url.Url
+    | ChangedUrl Url.Url
+    | GotPostsMsg Page.Posts.Msg
 
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    ( Model key Posts, Cmd.none )
-
-
-routeParser : Parser (Route -> a) a
-routeParser =
-    oneOf
-        [ map Posts (s "posts")
-        , map Comments (s "comments")
-        ]
+    changeRouteTo Route.Posts (Model key Route.Posts Empty)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        UrlChanged url ->
-            case Url.Parser.parse routeParser url of
+    case ( msg, model.pageModel ) of
+        ( ChangedUrl url, _ ) ->
+            case Route.parseRoute url of
                 Just x ->
-                    ( { model | route = x }, Cmd.none )
+                    changeRouteTo x model
 
                 Nothing ->
                     Debug.todo "no route found"
 
-        LinkClicked urlRequest ->
+        ( LinkClicked urlRequest, _ ) ->
             case urlRequest of
                 Browser.Internal url ->
                     ( model, Nav.pushUrl model.key (Url.toString url) )
 
                 Browser.External href ->
                     ( model, Nav.load href )
+
+        ( GotPostsMsg subMsg, PostsModel subModel ) ->
+            Page.Posts.update subMsg subModel
+                |> updateWith PostsModel GotPostsMsg model
+
+        ( _, _ ) ->
+            ( model, Cmd.none )
+
+
+changeRouteTo : Route.Route -> Model -> ( Model, Cmd Msg )
+changeRouteTo route model =
+    case route of
+        Route.Comments ->
+            ( { model | pageModel = CommentsModel }, Cmd.none )
+
+        Route.Posts ->
+            Page.Posts.init |> updateWith PostsModel GotPostsMsg model
+
+
+updateWith : (subModel -> PageModel) -> (subMsg -> Msg) -> Model -> ( subModel, Cmd subMsg ) -> ( Model, Cmd Msg )
+updateWith toModel toMsg model ( subModel, subCmd ) =
+    ( { model | pageModel = toModel subModel }
+    , Cmd.map toMsg subCmd
+    )
 
 
 viewLink : String -> Html msg
@@ -71,11 +91,14 @@ view model =
             , body = body
             }
     in
-    case model.route of
-        Posts ->
+    case model.pageModel of
+        Empty ->
+            viewPage [ text "You shouldn't be here" ]
+
+        PostsModel subModel ->
             viewPage [ text "Posts", viewLink "/comments" ]
 
-        Comments ->
+        CommentsModel ->
             viewPage [ text "Comments", viewLink "/posts" ]
 
 
@@ -95,6 +118,6 @@ main =
         , view = view
         , update = update
         , subscriptions = subscriptions
-        , onUrlChange = UrlChanged
+        , onUrlChange = ChangedUrl
         , onUrlRequest = LinkClicked
         }

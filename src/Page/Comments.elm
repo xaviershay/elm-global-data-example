@@ -22,12 +22,12 @@ type alias Model =
     }
 
 
-init : ( Model, Cmd Msg )
 init =
     ( { comments = Loading }
     , Cmd.batch
         [ Http.send CompletedCommentsRequest (Http.get "http://localhost:3000/comments" (Decode.list Data.Comment.decoder))
         ]
+    , []
     )
 
 

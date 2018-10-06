@@ -3,6 +3,7 @@ module Main exposing (Model)
 import Browser
 import Browser.Navigation as Nav
 import Data.Profile
+import GlobalDataRequest exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http
@@ -17,6 +18,10 @@ type alias Model =
     { key : Nav.Key
     , route : Route.Route
     , pageModel : PageModel
+
+    -- INTERESTING: I cheated here a bit and directly emdedded this data as the
+    -- shared model. You can imagine wrapping this in a type to allow for
+    -- different types for shared data.
     , sharedModel : Status Data.Profile.Profile
     }
 
@@ -32,7 +37,12 @@ type Msg
     | ChangedUrl Url.Url
     | GotPostsMsg Page.Posts.Msg
     | GotCommentsMsg Page.Comments.Msg
-    | CompletedProfileRequest (Result Http.Error Data.Profile.Profile)
+      -- INTERESTING: Wrapping GlobalDataRequest here primarily to avoid a
+      -- dependency loop (pages can depend on GlobalDataRequest rather than
+      -- Main), but as a nice side effect this also packages up the global data
+      -- requests into a separate module to avoid changes in Main when new ones
+      -- are added.
+    | GotGlobalDataMsg GlobalDataRequest
 
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
@@ -67,8 +77,14 @@ update msg model =
             Page.Comments.update subMsg subModel model.sharedModel
                 |> updateWith CommentsModel GotCommentsMsg model
 
-        ( CompletedProfileRequest (Ok x), _ ) ->
-            ( { model | sharedModel = Loaded x }, Cmd.none )
+        -- INTERESTING: This message handler looks very similar to the page
+        -- handlers above. Neat, huh?
+        ( GotGlobalDataMsg subMsg, _ ) ->
+            let
+                ( newSharedModel, newCmd ) =
+                    GlobalDataRequest.update subMsg
+            in
+            ( { model | sharedModel = newSharedModel }, newCmd )
 
         ( _, _ ) ->
             ( model, Cmd.none )
@@ -77,23 +93,27 @@ update msg model =
 changeRouteTo : Route.Route -> Model -> ( Model, Cmd Msg )
 changeRouteTo route model =
     let
-        globalDataCmd =
-            case model.sharedModel of
-                Loaded _ ->
-                    Cmd.none
-
-                _ ->
-                    Http.send CompletedProfileRequest (Http.get "http://localhost:3000/profile" Data.Profile.decoder)
-
-        ( newModel, newCmd ) =
+        ( newModel, newCmd, reqs ) =
             case route of
                 Route.Comments ->
-                    Page.Comments.init |> updateWith CommentsModel GotCommentsMsg model
+                    Page.Comments.init |> updateInitWith CommentsModel GotCommentsMsg model
 
                 Route.Posts ->
-                    Page.Posts.init |> updateWith PostsModel GotPostsMsg model
+                    Page.Posts.init |> updateInitWith PostsModel GotPostsMsg model
+
+        -- INTERESTING: Pages return which global data they're interested in,
+        -- this mangling transforms them into a request we know what to do
+        -- with. Note the building of an Http req and wrapping in
+        -- GotGlobalDataMsg
+        globalDataReqs =
+            List.map (GlobalDataRequest.toRequests model.sharedModel) reqs
+                |> catMaybes
     in
-    ( newModel, Cmd.batch [ globalDataCmd, newCmd ] )
+    ( newModel, Cmd.batch <| newCmd :: List.map (\( r, http ) -> Http.send (\x -> GotGlobalDataMsg (r x)) http) globalDataReqs )
+
+
+catMaybes =
+    List.filterMap identity
 
 
 updateWith : (subModel -> PageModel) -> (subMsg -> Msg) -> Model -> ( subModel, Cmd subMsg ) -> ( Model, Cmd Msg )
@@ -103,9 +123,11 @@ updateWith toModel toMsg model ( subModel, subCmd ) =
     )
 
 
-viewLink : String -> Html msg
-viewLink path =
-    a [ href path ] [ text path ]
+updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
+    ( { model | pageModel = toModel subModel }
+    , Cmd.map toMsg subCmd
+    , reqs
+    )
 
 
 view : Model -> Browser.Document Msg
@@ -125,6 +147,11 @@ view model =
 
         CommentsModel subModel ->
             viewPage [ Page.Comments.view subModel model.sharedModel, p [] [ viewLink "/posts" ] ]
+
+
+viewLink : String -> Html msg
+viewLink path =
+    a [ href path ] [ text path ]
 
 
 subscriptions : Model -> Sub Msg

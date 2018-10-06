@@ -1,6 +1,7 @@
 module Page.Posts exposing (Model, Msg(..), init, update, view)
 
 import Data.Post exposing (Post)
+import GlobalDataRequest
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http
@@ -17,12 +18,13 @@ type alias Model =
     }
 
 
-init : ( Model, Cmd Msg )
+init : ( Model, Cmd Msg, List GlobalDataRequest.Request )
 init =
     ( { posts = Loading }
-    , Cmd.batch
-        [ Http.send CompletedPostsRequest (Http.get "http://localhost:3000/posts" (Decode.list Data.Post.decoder))
-        ]
+    , Http.send CompletedPostsRequest (Http.get "http://localhost:3000/posts" (Decode.list Data.Post.decoder))
+      -- INTERESTING: This is all the posts page needs to do to request that
+      -- the global profile data be present.
+    , [ GlobalDataRequest.Profile ]
     )
 
 
@@ -37,6 +39,8 @@ update msg model sharedModel =
 
 view model sharedModel =
     let
+        -- INTERESTING: I didn't go so far as to extract rendering of shared
+        -- data into a shared module, but it would be trivial.
         profileView =
             case sharedModel of
                 Loaded x ->

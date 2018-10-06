@@ -31,7 +31,7 @@ init =
     )
 
 
-update msg model =
+update msg model sharedModel =
     case msg of
         CompletedCommentsRequest (Err e) ->
             ( { model | comments = Failed e }, Cmd.none )
@@ -40,7 +40,7 @@ update msg model =
             ( { model | comments = Loaded comments }, Cmd.none )
 
 
-view model =
+view model sharedModel =
     case model.comments of
         Failed x ->
             p [] [ text "Failed: ", text (Debug.toString x) ]

@@ -1,16 +1,11 @@
-module Page.Posts exposing (Model, Msg(..), Status(..), init, update, view)
+module Page.Posts exposing (Model, Msg(..), init, update, view)
 
 import Data.Post exposing (Post)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Http
 import Json.Decode as Decode
-
-
-type Status a
-    = Loading
-    | Loaded a
-    | Failed Http.Error
+import Status exposing (..)
 
 
 type Msg
@@ -31,7 +26,7 @@ init =
     )
 
 
-update msg model =
+update msg model sharedModel =
     case msg of
         CompletedPostsRequest (Err e) ->
             ( { model | posts = Failed e }, Cmd.none )
@@ -40,13 +35,25 @@ update msg model =
             ( { model | posts = Loaded posts }, Cmd.none )
 
 
-view model =
-    case model.posts of
-        Failed x ->
-            p [] [ text "Failed: ", text (Debug.toString x) ]
+view model sharedModel =
+    let
+        profileView =
+            case sharedModel of
+                Loaded x ->
+                    p [] [ text "Profile: ", text x.name ]
 
-        Loading ->
-            text "Loading"
+                _ ->
+                    p [] [ text "Profile not loaded" ]
+    in
+    div []
+        [ profileView
+        , case model.posts of
+            Failed x ->
+                p [] [ text "Failed: ", text (Debug.toString x) ]
 
-        Loaded posts ->
-            ul [] (List.map (\x -> li [] [ text x.title ]) posts)
+            Loading ->
+                text "Loading"
+
+            Loaded posts ->
+                ul [] (List.map (\x -> li [] [ text x.title ]) posts)
+        ]

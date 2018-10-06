@@ -18,3 +18,5 @@ To run it:
     json-server --watch db.json
     elm-live src/Main.elm --pushstate
     # Visit localhost:8000/posts
+
+This was developed on elm 0.19.

@@ -42,7 +42,7 @@ view model sharedModel =
         -- INTERESTING: I didn't go so far as to extract rendering of shared
         -- data into a shared module, but it would be trivial.
         profileView =
-            case sharedModel of
+            case sharedModel.profile of
                 Loaded x ->
                     p [] [ text "Profile: ", text x.name ]
 

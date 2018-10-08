@@ -1,8 +1,10 @@
-module GlobalDataRequest exposing (GlobalDataRequest(..), Request(..), toRequests, update)
+module GlobalDataRequest exposing (GlobalDataRequest(..), Request(..), SharedModel, init, toRequests, update)
 
 import Data.Profile
+import Data.Profile2
 import Http
 import Status exposing (..)
+import Task exposing (Task)
 
 
 
@@ -16,25 +18,55 @@ import Status exposing (..)
 
 type GlobalDataRequest
     = CompletedProfileRequest (Result Http.Error Data.Profile.Profile)
+    | CompletedProfile2Request (Result Http.Error Data.Profile2.Profile2)
 
 
 type Request
     = Profile
+    | Profile2
 
 
+type alias SharedModel =
+    { profile : Status Data.Profile.Profile
+    , profile2 : Status Data.Profile2.Profile2
+    }
+
+
+init =
+    SharedModel Loading Loading
+
+
+toRequests : SharedModel -> Request -> Cmd GlobalDataRequest
 toRequests sharedModel req =
     case ( sharedModel, req ) of
-        ( Loaded _, _ ) ->
-            Nothing
+        ( model, Profile ) ->
+            case model.profile of
+                Loaded x ->
+                    Cmd.none
 
-        ( _, Profile ) ->
-            Just ( CompletedProfileRequest, Http.get "http://localhost:3000/profile" Data.Profile.decoder )
+                _ ->
+                    Http.send CompletedProfileRequest (Http.get "http://localhost:3000/profile" Data.Profile.decoder)
+
+        ( model, Profile2 ) ->
+            case model.profile2 of
+                Loaded x ->
+                    Cmd.none
+
+                _ ->
+                    Http.send CompletedProfile2Request (Http.get "http://localhost:3000/profile" Data.Profile2.decoder)
 
 
-update subMsg =
+update : GlobalDataRequest -> SharedModel -> ( SharedModel, Cmd GlobalDataRequest )
+update subMsg subModel =
     case subMsg of
         CompletedProfileRequest (Err x) ->
-            ( Failed x, Cmd.none )
+            ( { subModel | profile = Failed x }, Cmd.none )
 
         CompletedProfileRequest (Ok x) ->
-            ( Loaded x, Cmd.none )
+            ( { subModel | profile = Loaded x }, Cmd.none )
+
+        CompletedProfile2Request (Err x) ->
+            ( { subModel | profile2 = Failed x }, Cmd.none )
+
+        CompletedProfile2Request (Ok x) ->
+            ( { subModel | profile2 = Loaded x }, Cmd.none )

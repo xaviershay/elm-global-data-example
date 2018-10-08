@@ -22,7 +22,7 @@ type alias Model =
     -- INTERESTING: I cheated here a bit and directly emdedded this data as the
     -- shared model. You can imagine wrapping this in a type to allow for
     -- different types for shared data.
-    , sharedModel : Status Data.Profile.Profile
+    , sharedModel : GlobalDataRequest.SharedModel
     }
 
 
@@ -47,7 +47,7 @@ type Msg
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    changeRouteTo Route.Posts (Model key Route.Posts Empty Loading)
+    changeRouteTo Route.Posts (Model key Route.Posts Empty GlobalDataRequest.init)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -82,9 +82,9 @@ update msg model =
         ( GotGlobalDataMsg subMsg, _ ) ->
             let
                 ( newSharedModel, newCmd ) =
-                    GlobalDataRequest.update subMsg
+                    GlobalDataRequest.update subMsg model.sharedModel
             in
-            ( { model | sharedModel = newSharedModel }, newCmd )
+            ( { model | sharedModel = newSharedModel }, Cmd.map GotGlobalDataMsg newCmd )
 
         ( _, _ ) ->
             ( model, Cmd.none )
@@ -107,9 +107,8 @@ changeRouteTo route model =
         -- GotGlobalDataMsg
         globalDataReqs =
             List.map (GlobalDataRequest.toRequests model.sharedModel) reqs
-                |> catMaybes
     in
-    ( newModel, Cmd.batch <| newCmd :: List.map (\( r, http ) -> Http.send (\x -> GotGlobalDataMsg (r x)) http) globalDataReqs )
+    ( newModel, Cmd.batch (List.map (Cmd.map GotGlobalDataMsg) globalDataReqs) )
 
 
 catMaybes =

@@ -36,24 +36,26 @@ init =
     SharedModel Loading Loading
 
 
-toRequests : SharedModel -> Request -> Cmd GlobalDataRequest
+toRequests : SharedModel -> Request -> Maybe (Cmd GlobalDataRequest)
 toRequests sharedModel req =
     case ( sharedModel, req ) of
         ( model, Profile ) ->
             case model.profile of
                 Loaded x ->
-                    Cmd.none
+                    -- Using Nothing rather than Cmd.none here since callers
+                    -- need to be able to switch on it.
+                    Nothing
 
                 _ ->
-                    Http.send CompletedProfileRequest (Http.get "http://localhost:3000/profile" Data.Profile.decoder)
+                    Just (Http.send CompletedProfileRequest (Http.get "http://localhost:3000/profile" Data.Profile.decoder))
 
         ( model, Profile2 ) ->
             case model.profile2 of
                 Loaded x ->
-                    Cmd.none
+                    Nothing
 
                 _ ->
-                    Http.send CompletedProfile2Request (Http.get "http://localhost:3000/profile" Data.Profile2.decoder)
+                    Just (Http.send CompletedProfile2Request (Http.get "http://localhost:3000/profile" Data.Profile2.decoder))
 
 
 update : GlobalDataRequest -> SharedModel -> ( SharedModel, Cmd GlobalDataRequest )

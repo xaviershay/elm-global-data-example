@@ -5,6 +5,9 @@ This project demonstrates how to share globally cached data selectively across
 pages in an SPA. `/profile` will be called on first load of the `/posts`
 route, but then not again. It won't be called on `/comments`.
 
+In addition, it also shows how pages are able to build up their own model as a
+result of that shared data.
+
 Grep the code base for `INTERESTING` for commentary on the ... interesting
 bits.
 

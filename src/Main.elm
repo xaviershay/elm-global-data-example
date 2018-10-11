@@ -3,6 +3,7 @@ module Main exposing (Model)
 import Browser
 import Browser.Navigation as Nav
 import Data.Profile
+import Either exposing (..)
 import GlobalDataRequest exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -42,7 +43,10 @@ type Msg
       -- Main), but as a nice side effect this also packages up the global data
       -- requests into a separate module to avoid changes in Main when new ones
       -- are added.
-    | GotGlobalDataMsg GlobalDataRequest
+      --
+      -- The (Maybe Msg) is a callback message to be dispatched after the
+      -- global data has been updated.
+    | GotGlobalDataMsg GlobalDataRequest (Maybe Msg)
 
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
@@ -79,12 +83,31 @@ update msg model =
 
         -- INTERESTING: This message handler looks very similar to the page
         -- handlers above. Neat, huh?
-        ( GotGlobalDataMsg subMsg, _ ) ->
+        ( GotGlobalDataMsg subMsg next, _ ) ->
             let
                 ( newSharedModel, newCmd ) =
                     GlobalDataRequest.update subMsg model.sharedModel
+
+                newModel =
+                    { model | sharedModel = newSharedModel }
+
+                ( newSubModel, newCmd2 ) =
+                    case next of
+                        Just cmd ->
+                            -- INTERESTING: Recursively call update here rather
+                            -- than dispatch another Cmd. See
+                            -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84
+                            update cmd newModel
+
+                        Nothing ->
+                            ( newModel, Cmd.none )
             in
-            ( { model | sharedModel = newSharedModel }, Cmd.map GotGlobalDataMsg newCmd )
+            ( newSubModel
+            , Cmd.batch
+                [ Cmd.map (\x -> GotGlobalDataMsg x Nothing) newCmd
+                , newCmd2
+                ]
+            )
 
         ( _, _ ) ->
             ( model, Cmd.none )
@@ -92,23 +115,12 @@ update msg model =
 
 changeRouteTo : Route.Route -> Model -> ( Model, Cmd Msg )
 changeRouteTo route model =
-    let
-        ( newModel, newCmd, reqs ) =
-            case route of
-                Route.Comments ->
-                    Page.Comments.init |> updateInitWith CommentsModel GotCommentsMsg model
+    case route of
+        Route.Comments ->
+            Page.Comments.init |> updateInitWith CommentsModel GotCommentsMsg model
 
-                Route.Posts ->
-                    Page.Posts.init |> updateInitWith PostsModel GotPostsMsg model
-
-        -- INTERESTING: Pages return which global data they're interested in,
-        -- this mangling transforms them into a request we know what to do
-        -- with. Note the building of an Http req and wrapping in
-        -- GotGlobalDataMsg
-        globalDataReqs =
-            List.map (GlobalDataRequest.toRequests model.sharedModel) reqs
-    in
-    ( newModel, Cmd.batch (newCmd :: List.map (Cmd.map GotGlobalDataMsg) globalDataReqs) )
+        Route.Posts ->
+            Page.Posts.init |> updateInitWith PostsModel GotPostsMsg model
 
 
 catMaybes =
@@ -122,11 +134,65 @@ updateWith toModel toMsg model ( subModel, subCmd ) =
     )
 
 
+updateInitWith : (subModel -> PageModel) -> (subMsg -> Msg) -> Model -> ( subModel, Cmd subMsg, List ( Request, subMsg ) ) -> ( Model, Cmd Msg )
 updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
-    ( { model | pageModel = toModel subModel }
-    , Cmd.map toMsg subCmd
-    , reqs
-    )
+    let
+        -- INTERESTING: In addition to their own init, pages return a list of
+        -- what shared data they are interested in (GlobalDataRequest.Request),
+        -- and a callback subMsg they want to receive when that data is loaded.
+        --
+        -- This mangling transforms that Request into a (Cmd
+        -- GlobalDataRequest), the callback subMsg into a (Msg), then composes
+        -- them both together into a (Msg | GotGlobalDataMsg).
+        --
+        -- You can imagine extending this interface allow for optional
+        -- callbacks (have subpage init function return a (Maybe subMsg)).
+        --
+        -- If the shared data is already loaded, then rather than generate a
+        -- new command (the Right case), we instead need to directly recurse
+        -- into update with the callback message (Left case). It's tempting to
+        -- instead wrap the callback message up into a Cmd and dispatch it,
+        -- since it would make this code cleaner, but that has weaker
+        -- guarantees around ordering (see
+        -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84).
+        -- Doing it this way is more correct. This recursion idea is also used
+        -- above in the message handler for GotGlobalDataMsg.
+        sharedCmds =
+            List.map
+                (\( req, callback ) ->
+                    case GlobalDataRequest.toRequests model.sharedModel req of
+                        Nothing ->
+                            Left (toMsg callback)
+
+                        Just reqCmd ->
+                            Right
+                                (Cmd.map
+                                    (\x -> GotGlobalDataMsg x (Just (toMsg callback)))
+                                    reqCmd
+                                )
+                )
+                reqs
+    in
+    -- Using the shared data requests as an initial value, iterate through
+    -- all the direct callbacks (where data has been loaded) and include
+    -- their results in our final model/cmd pair.
+    List.foldl
+        (\callback ( accumModel, cmd ) ->
+            let
+                ( m2, cmd2 ) =
+                    update callback accumModel
+            in
+            ( m2, Cmd.batch [ cmd, cmd2 ] )
+        )
+        ( { model | pageModel = toModel subModel }
+        , Cmd.batch
+            [ Cmd.map toMsg subCmd
+
+            -- If sharedCmds is empty, this will be a noop
+            , Cmd.batch (rights sharedCmds)
+            ]
+        )
+        (lefts sharedCmds)
 
 
 view : Model -> Browser.Document Msg

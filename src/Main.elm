@@ -24,6 +24,13 @@ type alias Model =
     -- shared model. You can imagine wrapping this in a type to allow for
     -- different types for shared data.
     , sharedModel : GlobalDataRequest.SharedModel
+
+    -- INTERESTING: This list of messages will be processed whenever a
+    -- successful shared data request completes. It is set by the init function
+    -- whenever we change a page.
+    --
+    -- See README for discussion of other methods of managing this list.
+    , sharedCallback : List Msg
     }
 
 
@@ -43,15 +50,12 @@ type Msg
       -- Main), but as a nice side effect this also packages up the global data
       -- requests into a separate module to avoid changes in Main when new ones
       -- are added.
-      --
-      -- The (Maybe Msg) is a callback message to be dispatched after the
-      -- global data has been updated.
-    | GotGlobalDataMsg GlobalDataRequest (Maybe Msg)
+    | GotGlobalDataMsg GlobalDataRequest
 
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    changeRouteTo Route.Posts (Model key Route.Posts Empty GlobalDataRequest.init)
+    changeRouteTo Route.Posts (Model key Route.Posts Empty GlobalDataRequest.init [])
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -83,7 +87,7 @@ update msg model =
 
         -- INTERESTING: This message handler looks very similar to the page
         -- handlers above. Neat, huh?
-        ( GotGlobalDataMsg subMsg next, _ ) ->
+        ( GotGlobalDataMsg subMsg, _ ) ->
             let
                 ( newSharedModel, newCmd ) =
                     GlobalDataRequest.update subMsg model.sharedModel
@@ -92,19 +96,23 @@ update msg model =
                     { model | sharedModel = newSharedModel }
 
                 ( newSubModel, newCmd2 ) =
-                    case next of
-                        Just cmd ->
-                            -- INTERESTING: Recursively call update here rather
-                            -- than dispatch another Cmd. See
-                            -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84
-                            update cmd newModel
-
-                        Nothing ->
-                            ( newModel, Cmd.none )
+                    -- INTERESTING: Recursively call update here rather
+                    -- than dispatch another Cmd. See
+                    -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84
+                    List.foldl
+                        (\callback ( modelAccum, cmdAccum ) ->
+                            let
+                                ( m2, c2 ) =
+                                    update callback modelAccum
+                            in
+                            ( m2, Cmd.batch [ cmdAccum, c2 ] )
+                        )
+                        ( newModel, Cmd.none )
+                        newModel.sharedCallback
             in
             ( newSubModel
             , Cmd.batch
-                [ Cmd.map (\x -> GotGlobalDataMsg x Nothing) newCmd
+                [ Cmd.map GotGlobalDataMsg newCmd
                 , newCmd2
                 ]
             )
@@ -157,6 +165,10 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
         -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84).
         -- Doing it this way is more correct. This recursion idea is also used
         -- above in the message handler for GotGlobalDataMsg.
+        --
+        -- TODO: Simplify this by _always_ calling the callback, even if not loaded
+        -- yet. It's slightly more work, but the callback has to handle this case
+        -- anyway and it's probably worth it for the code simplification.
         sharedCmds =
             List.map
                 (\( req, callback ) ->
@@ -166,8 +178,9 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
 
                         Just reqCmd ->
                             Right
-                                (Cmd.map
-                                    (\x -> GotGlobalDataMsg x (Just (toMsg callback)))
+                                ( toMsg callback
+                                , Cmd.map
+                                    GotGlobalDataMsg
                                     reqCmd
                                 )
                 )
@@ -176,6 +189,8 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
     -- Using the shared data requests as an initial value, iterate through
     -- all the direct callbacks (where data has been loaded) and include
     -- their results in our final model/cmd pair.
+    --
+    -- TODO: Abstract this foldl pattern, we use it in a couple of places.
     List.foldl
         (\callback ( accumModel, cmd ) ->
             let
@@ -184,12 +199,12 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
             in
             ( m2, Cmd.batch [ cmd, cmd2 ] )
         )
-        ( { model | pageModel = toModel subModel }
+        ( { model | pageModel = toModel subModel, sharedCallback = List.map Tuple.first (rights sharedCmds) }
         , Cmd.batch
             [ Cmd.map toMsg subCmd
 
             -- If sharedCmds is empty, this will be a noop
-            , Cmd.batch (rights sharedCmds)
+            , Cmd.batch (List.map Tuple.second (rights sharedCmds))
             ]
         )
         (lefts sharedCmds)

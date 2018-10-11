@@ -23,3 +23,28 @@ To run it:
     # Visit localhost:8000/posts
 
 This was developed on elm 0.19.
+
+Failure cases
+-------------
+
+Rapidly switching between pages can trigger duplicate shared data requests.
+What happens when these arrive out of order? What happens if one fails after
+one has succeeded?
+
+The first successful shared data request will always update the active page,
+subsequent ones should be no-ops. Since shared data will always be applied
+whenever a page is navigated to, we don't need to worry about updating
+non-active pages that historically requested the shared data - that update is
+effectively deffered until the page is navigated to again. (In theory it
+wouldn't be hard to also update non-active pages, but not sure the extra
+bookkeepping to do so - keeping a list of pages that need callbacks - provides
+any benefits).
+
+It is possible that a callback will be called multiple times for the same
+shared data, that's fine and expected: should be a noop on repeat calls.
+
+This implementation redundantly generates duplicate shared data requests when
+one is already in flight but hasn't completed yet. This doesn't affect
+correctness (we need to handle possible duplicate requests anyway, for example
+if we ever want to be able to retry on error), but could be addressed by some
+extra bookkeeping in the Status data type.

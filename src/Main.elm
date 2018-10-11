@@ -108,7 +108,7 @@ changeRouteTo route model =
         globalDataReqs =
             List.map (GlobalDataRequest.toRequests model.sharedModel) reqs
     in
-    ( newModel, Cmd.batch (List.map (Cmd.map GotGlobalDataMsg) globalDataReqs) )
+    ( newModel, Cmd.batch (newCmd :: List.map (Cmd.map GotGlobalDataMsg) globalDataReqs) )
 
 
 catMaybes =

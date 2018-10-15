@@ -30,7 +30,7 @@ type alias Model =
     -- whenever we change a page.
     --
     -- See README for discussion of other methods of managing this list.
-    , sharedCallback : List Msg
+    , sharedCallbacks : List Msg
     }
 
 
@@ -95,20 +95,23 @@ update msg model =
                 newModel =
                     { model | sharedModel = newSharedModel }
 
+                -- INTERESTING: Recursively call update here rather
+                -- than dispatch another Cmd. See
+                -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84
                 ( newSubModel, newCmd2 ) =
-                    -- INTERESTING: Recursively call update here rather
-                    -- than dispatch another Cmd. See
-                    -- https://medium.com/elm-shorts/how-to-turn-a-msg-into-a-cmd-msg-in-elm-5dd095175d84
-                    List.foldl
-                        (\callback ( modelAccum, cmdAccum ) ->
-                            let
-                                ( m2, c2 ) =
-                                    update callback modelAccum
-                            in
-                            ( m2, Cmd.batch [ cmdAccum, c2 ] )
-                        )
-                        ( newModel, Cmd.none )
-                        newModel.sharedCallback
+                    foldUpdates ( newModel, Cmd.none )
+                        newModel.sharedCallbacks
+
+                --    List.foldl
+                --    (\callback ( modelAccum, cmdAccum ) ->
+                --        let
+                --            ( m2, c2 ) =
+                --                update callback modelAccum
+                --        in
+                --        ( m2, Cmd.batch [ cmdAccum, c2 ] )
+                --    )
+                --    ( newModel, Cmd.none )
+                --    newModel.sharedCallbacks
             in
             ( newSubModel
             , Cmd.batch
@@ -189,17 +192,8 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
     -- Using the shared data requests as an initial value, iterate through
     -- all the direct callbacks (where data has been loaded) and include
     -- their results in our final model/cmd pair.
-    --
-    -- TODO: Abstract this foldl pattern, we use it in a couple of places.
-    List.foldl
-        (\callback ( accumModel, cmd ) ->
-            let
-                ( m2, cmd2 ) =
-                    update callback accumModel
-            in
-            ( m2, Cmd.batch [ cmd, cmd2 ] )
-        )
-        ( { model | pageModel = toModel subModel, sharedCallback = List.map Tuple.first (rights sharedCmds) }
+    foldUpdates
+        ( { model | pageModel = toModel subModel, sharedCallbacks = List.map Tuple.first (rights sharedCmds) }
         , Cmd.batch
             [ Cmd.map toMsg subCmd
 
@@ -208,6 +202,22 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
             ]
         )
         (lefts sharedCmds)
+
+
+
+-- {-| Given a list of messages, repeatedly apply them to the given initial
+-- model, accumulating commands along the way.
+-- -}
+
+
+foldUpdates : ( Model, Cmd Msg ) -> List Msg -> ( Model, Cmd Msg )
+foldUpdates initial msgs =
+    List.foldl
+        (\msg ( model, cmd ) ->
+            Tuple.mapSecond (\cmd2 -> Cmd.batch [ cmd, cmd2 ]) (update msg model)
+        )
+        initial
+        msgs
 
 
 view : Model -> Browser.Document Msg

@@ -18,8 +18,8 @@ better place to look.
 
 To run it:
 
-    json-server --watch db.json
-    elm-live src/Main.elm --pushstate
+    bin/setup # One time setup
+    bin/dev   # Start development services
     # Visit localhost:8000/posts
 
 This was developed on elm 0.19.

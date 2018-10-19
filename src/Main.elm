@@ -172,6 +172,9 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
         -- TODO: Simplify this by _always_ calling the callback, even if not loaded
         -- yet. It's slightly more work, but the callback has to handle this case
         -- anyway and it's probably worth it for the code simplification.
+        --
+        -- TODO: Rather than use Either (Left/Right), use more descriptive type
+        -- names (ImmediateData, ToLoadData).
         sharedCmds =
             List.map
                 (\( req, callback ) ->
@@ -192,6 +195,8 @@ updateInitWith toModel toMsg model ( subModel, subCmd, reqs ) =
     -- Using the shared data requests as an initial value, iterate through
     -- all the direct callbacks (where data has been loaded) and include
     -- their results in our final model/cmd pair.
+    --
+    -- TODO: Caroline says there is a better way to do this.
     foldUpdates
         ( { model | pageModel = toModel subModel, sharedCallbacks = List.map Tuple.first (rights sharedCmds) }
         , Cmd.batch
